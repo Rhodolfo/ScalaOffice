@@ -66,16 +66,34 @@ object excel {
     (headers.toSeq,data.toSeq)
   }
 
+
+
+  /** Given a class T and headers, return a constructor that can be used with said headers. */
+  def constructorOf[T:ClassTag](headers: ExcelHeader) = {
+    val columns = headers.map(_._2).toSeq
+    val constructors = classTag[T].runtimeClass.getDeclaredConstructors
+    val candidates = constructors.filter(small => small.getParameters.map(_.getName).foldLeft[Boolean](true)(_ && columns.contains(_)))
+    if (candidates.isEmpty) throw new Error("No valid constructor found for given class, maybe there's missing columns")
+    candidates.sortWith(_.getParameterCount > _.getParameterCount).head
+  }
+
   /** Given a case class T fetches companion class. */
   def companionOf[T](implicit tag: ClassTag[T]): Class[_] = {
     Class.forName(classTag[T](tag).runtimeClass.getName+"$", true, classTag[T](tag).runtimeClass.getClassLoader)
   }
 
-  /** Given a case class T return parameters of largest contructor. */
-  def parametersOf[T](implicit tag: ClassTag[T]): Array[String] = {
-    classTag[T].runtimeClass.getDeclaredConstructors
-      .sortWith(_.getParameterCount > _.getParameterCount)
-      .head.getParameters.map(_.getName)
+  /** Given a class T and headers, return an apply method that can be used with said headers. */
+  def applyOf[T: ClassTag](headers: ExcelHeader) = {
+    val columns = headers.map(_._2).toSeq
+    val candidates = companionOf[T].getMethods
+      .filter(m => m.getName=="apply" && m.getParameters.map(_.getName).foldLeft[Boolean](true)(_ && columns.contains(_)))
+    if (candidates.isEmpty) {
+      throw new Error(
+        "No valid apply method found, "+
+        "there could be missing columns or "+
+        "the companion object needs an apply method to implement a constructor"
+      )
+    } else candidates.head
   }
 
   /** Given a case class T and a header list (index,name) gives back an Seq 
@@ -84,8 +102,8 @@ object excel {
     *
     * @return Indices of headers that correspond to class constructor parameters.
     */
-  private def orderedIndices[T: ClassTag](headers: ExcelHeader): Seq[Int] = {
-    parametersOf[T].map(field => headers.filter(pair => field==pair._2))
+  def orderedIndices[T: ClassTag](headers: ExcelHeader): Seq[Int] = {
+    applyOf[T](headers).getParameters.map(field => headers.filter(pair => field.getName==pair._2))
     .map(ls => if (ls.size==1) ls.head._1 else throw new Error("Multiple fields with same name or missing field: "+ls+" vs "+headers))
   }
 
@@ -102,12 +120,16 @@ object excel {
     val indices = orderedIndices[T](headers)
     val orderedData = indices.map(row(_))
     val companionClass = companionOf[T]
-    val companionApply = companionClass.getMethods.find(x => x.getName == "apply") match {
-      case Some(x) => x
-      case None => throw new Error("Not a case class")
-    }
-    companionApply.invoke(companionClass.newInstance(), orderedData map (_.asInstanceOf[AnyRef]): _*).
-      asInstanceOf[T] 
+    val companionApply = applyOf[T](headers)
+    val transform = companionApply.getParameters.map(_.getParameterizedType.toString).map(z => 
+      if (z=="class java.lang.String") ((x:String) => x.trim)
+      else if (z=="int") ((x:String) => x.toInt)
+      else if (z=="double") ((x:String) => x.toDouble)
+      else ((x:String) => x.trim)
+    )
+    if (indices.size!=transform.size) throw new Error("Apply method parameter count is not consistent with indices count")
+    companionApply.invoke(companionClass.newInstance(), (orderedData zip transform).map(x => x._2(x._1).asInstanceOf[AnyRef]): _*)
+      .asInstanceOf[T] 
   }
 
   /** Reads Excel to a Seq[T], where T is a case class.
@@ -120,7 +142,7 @@ object excel {
   def readExcelintoClass[T: ClassTag](file: String, sheet: Int): Seq[T] = {
     val (headers,data) = readExcel(file, sheet)
     val excelVars = headers.map(_._2)
-    val classVars = parametersOf[T]
+    val classVars = applyOf[T](headers).getParameters.map(_.getName)
     val missingFields = classVars.filterNot(x => excelVars contains x)
     if (!missingFields.isEmpty) {
       throw new Error("Missing fields: "+missingFields.foldLeft("")((a,b) => if (a.isEmpty) b else a+","+b))
