@@ -51,6 +51,7 @@ object excel {
     *
     * @param file Path to workbook.
     * @param sheet Index of sheet to read in workbook.
+    * @param condition Anonymous function, rows for which this function returns false are exluded from result.
     * @return (Headers, Data) pair.
     */
   def readExcel(file: String, sheet: Int, condition: ExcelRow => Boolean = x => true): (ExcelHeader,ExcelData) = {
@@ -83,6 +84,7 @@ object excel {
     * @tparam T Case class to extract.
     * @param file Path to workbook.
     * @param sheet Sheet index in workbook.
+    * @param condition Anonymous function, rows for which this function returns false are exluded from result.
     * @return Excel rows as Seq[T].
     */
   def readExcelintoClass[T: ClassTag](file: String, sheet: Int, condition: T => Boolean = (x:T) => true): Seq[T] = {

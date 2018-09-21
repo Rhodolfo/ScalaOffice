@@ -33,6 +33,7 @@ object csv {
     * Data is stored as Seq[Seq[String]].
     *
     * @param file Path to CSV file.
+    * @param condition Anonymous function, rows for which this function returns false are exluded from result.
     * @return (Headers, Data) pair.
     */
   def readCSV(file: String, condition: ExcelRow => Boolean = x => true): (ExcelHeader,Seq[ExcelRow]) = {
@@ -55,7 +56,7 @@ object csv {
     *
     * @tparam T Case class to extract.
     * @param file Path to workbook.
-    * @param condition Condition to add an isntance of T to Seq.
+    * @param condition Anonymous function, rows for which this function returns false are exluded from result.
     * @return Excel rows as Seq[T].
     */
   def readCSVintoClass[T:ClassTag](file: String, condition: T => Boolean = (x:T) => true): Seq[T] = {
