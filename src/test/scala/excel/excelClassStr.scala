@@ -1,6 +1,6 @@
 import org.scalatest.FunSuite
 
-class ExcelReadStr extends FunSuite {
+class ReadExcelClassStr extends FunSuite {
 
   import com.arena.office.excel.readExcelintoClass
   import com.arena.testing.auxRead.{ReadStr,dataStr,ReadTrs,dataTrs,ReadRst,dataRst}

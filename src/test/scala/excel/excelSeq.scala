@@ -1,6 +1,6 @@
 import org.scalatest.FunSuite
 
-class ExcelReadSeq extends FunSuite {
+class ReadExcelSeq extends FunSuite {
 
   import com.arena.office.excel.readExcel
   import com.arena.testing.auxRead.{cadenaCol, enteroCol, realesCol}
