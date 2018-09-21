@@ -1,1 +1,7 @@
 Repo made for tools that deal with reading from/writing to MS Office files.
+
+v2.0: 
+- Reads UTF-8 CSV files through readCSV and readCSVintoClass.
+- Added optional conditions to include data into result for parsing large files.
+v1.0: 
+- Reads Excel files through readExcel and readExcelintoClass.
