@@ -20,6 +20,6 @@ object process {
   }
 
   /** Removes spcaces, diacritical marks and non-word characters  (\W in RegEx) */
-  def prepareString(string: String): String = removeSpecial(spaceUnderscore(normalizeString(string.trim)))
+  def prepareColumn(string: String): String = removeSpecial(spaceUnderscore(normalizeString(string.trim)))
 
 }

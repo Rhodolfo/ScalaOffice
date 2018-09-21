@@ -9,8 +9,8 @@ object excel {
 
   import scala.util.matching.Regex
   import scala.reflect.{ClassTag,classTag}
-  import org.apache.poi.ss.usermodel.Workbook
-  import com.arena.office.process.prepareString
+  import org.apache.poi.ss.usermodel.{Workbook,Row}
+  import com.arena.office.process.prepareColumn
   import com.arena.office.reflect.{applyOf,mapRowToClass}
 
   /** Type alias for an Excel row, rows are stored as Seq[String]. */
@@ -19,6 +19,28 @@ object excel {
   type ExcelHeader = Seq[(Int,String)]
   /** Type alias for an Excel data table, stored as Seq[ExcelRow], which translates to Seq[Seq[String]]. */
   type ExcelData = Seq[ExcelRow]
+
+
+
+  private def getWorkbook(file: String): Workbook = {
+    import org.apache.poi.ss.usermodel.WorkbookFactory
+    import java.io.File
+    WorkbookFactory.create(new File(file))
+  }
+
+  private def getIterator(file: String, sheet: Int): Iterator[Row] = {
+    import collection.JavaConverters._
+    getWorkbook(file).getSheetAt(sheet).iterator.asScala
+  }
+
+  private def getHeaders(file: String, sheet: Int, iterator: Iterator[Row]): ExcelHeader = {
+    import collection.JavaConverters._
+    val headRow = {
+      if (iterator.hasNext) iterator.next.asScala
+      else throw new Error("Empty "+sheet+" sheet: "+file)
+    }
+    (for (cell<-headRow) yield (cell.getColumnIndex,prepareColumn(cell.getStringCellValue))).toSeq
+  }
 
 
 
@@ -31,24 +53,27 @@ object excel {
     * @param sheet Index of sheet to read in workbook.
     * @return (Headers, Data) pair.
     */
-  def readExcel(file: String, sheet: Int): (ExcelHeader,ExcelData) = {
-    import org.apache.poi.ss.usermodel.{DataFormatter, WorkbookFactory, Row}
-    import java.io.File
+  def readExcel(file: String, sheet: Int, condition: ExcelRow => Boolean = x => true): (ExcelHeader,ExcelData) = {
+    import org.apache.poi.ss.usermodel.DataFormatter
     import collection.JavaConverters._
+    // Formats
     val blankPolicy = Row.MissingCellPolicy.RETURN_BLANK_AS_NULL
-    val formatter = new DataFormatter()
-    val file2 = new File(file)
-    val workbook = WorkbookFactory.create(file2)
-    val worksheet = workbook.getSheetAt(sheet).asScala
-    val (headRow,dataRows) = (worksheet.head.asScala,worksheet.tail)
-    val headers = for (cell<-headRow) yield (cell.getColumnIndex,prepareString(cell.getStringCellValue))
-    val columns = headers.map(_._1)
-    val data = for {
-      row <- dataRows
-      values = for {col <- columns} yield Option(formatter.formatCellValue(row.getCell(col, blankPolicy)))
-      strings = values.map(e => e match { case Some(x) => x.trim; case None => throw new Error("NULL") })
-    } yield strings.toSeq
-    (headers.toSeq,data.toSeq)
+    val formatter   = new DataFormatter()
+    // Extract the iterator for this Excel sheet, then the headers
+    val iterator = getIterator(file, sheet)
+    val headers  = getHeaders(file, sheet, iterator)
+    // Let's extract the data now
+    val indices = headers.map(_._1)
+    val buffer  = scala.collection.mutable.ArrayBuffer[Seq[String]]()
+    while (iterator.hasNext) {
+      val row = {
+        val rowObj  = iterator.next
+        val values  = for {index <- indices} yield Option(formatter.formatCellValue(rowObj.getCell(index, blankPolicy)))
+        values.map(e => e match {case Some(x) => x.trim; case None => throw new Error("NULL")}).toSeq
+      }
+      if (condition(row)) buffer += row
+    }
+    (headers.toSeq,buffer.toArray.toSeq)
   }
 
 
@@ -60,14 +85,35 @@ object excel {
     * @param sheet Sheet index in workbook.
     * @return Excel rows as Seq[T].
     */
-  def readExcelintoClass[T: ClassTag](file: String, sheet: Int): Seq[T] = {
-    val (headers,data) = readExcel(file, sheet)
+  def readExcelintoClass[T: ClassTag](file: String, sheet: Int, condition: T => Boolean = (x:T) => true): Seq[T] = {
+    import org.apache.poi.ss.usermodel.DataFormatter
+    import collection.JavaConverters._
+    // Formats
+    val blankPolicy = Row.MissingCellPolicy.RETURN_BLANK_AS_NULL
+    val formatter   = new DataFormatter()
+    // Extract the iterator for this Excel sheet, then the headers
+    val iterator = getIterator(file, sheet)
+    val headers  = getHeaders(file, sheet, iterator)
+    // Checking headers with the class
     val excelVars = headers.map(_._2)
     val classVars = applyOf[T](headers).getParameters.map(_.getName)
     val missingFields = classVars.filterNot(x => excelVars contains x)
-    if (!missingFields.isEmpty) {
-      throw new Error("Missing fields: "+missingFields.foldLeft("")((a,b) => if (a.isEmpty) b else a+","+b))
-    } else data.map(mapRowToClass[T](headers,_))
+    val missingThrown = missingFields.foldLeft("")((a,b) => if (a.isEmpty) b else a+","+b)
+    if (!missingFields.isEmpty) throw new Error("Missing fields: "+missingThrown)
+    // Extracting data
+    val indices = headers.map(_._1)
+    val buffer  = scala.collection.mutable.ArrayBuffer[T]()
+    while (iterator.hasNext) {
+      val row = {
+        val rowObj  = iterator.next
+        val values  = for {index <- indices} yield Option(formatter.formatCellValue(rowObj.getCell(index, blankPolicy)))
+        values.map(e => e match {case Some(x) => x.trim; case None => throw new Error("NULL")}).toSeq
+      }
+      mapRowToClass[T](headers, row) match {
+        case (seq:T) => if (condition(seq)) buffer += seq
+      }
+    }
+    buffer.toArray.toSeq
   }
 
 
