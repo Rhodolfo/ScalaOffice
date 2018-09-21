@@ -32,7 +32,7 @@ object csv {
       val row = mapRowToClass[T](headers, iterator.next)
       if (condition(row)) buffer += row
     }
-    buffer.toSeq
+    buffer.toArray.toSeq
   }
 
 }
