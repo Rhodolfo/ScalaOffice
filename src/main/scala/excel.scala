@@ -9,7 +9,7 @@ object excel {
 
   import scala.util.matching.Regex
   import scala.reflect.{ClassTag,classTag}
-  import org.apache.poi.ss.usermodel.{Workbook,Row}
+  import org.apache.poi.ss.usermodel.{Workbook,Row, Cell}
   import com.arena.office.process.prepareColumn
   import com.arena.office.reflect.{applyOf,mapRowToClass}
 
@@ -20,11 +20,15 @@ object excel {
   /** Type alias for an Excel data table, stored as Seq[ExcelRow], which translates to Seq[Seq[String]]. */
   type ExcelData = Seq[ExcelRow]
 
-
+  private def extractString(cell: Cell): String = {
+    import org.apache.poi.ss.usermodel.CellType
+    val t = cell.setCellType(CellType.STRING)
+    cell.getStringCellValue
+  }
 
   private def getWorkbook(file: String): Workbook = {
-    import org.apache.poi.ss.usermodel.WorkbookFactory
     import java.io.File
+    import org.apache.poi.ss.usermodel.WorkbookFactory
     WorkbookFactory.create(new File(file))
   }
 
@@ -33,14 +37,30 @@ object excel {
     getWorkbook(file).getSheetAt(sheet).iterator.asScala
   }
 
+  private def getWorkbookStream(file: String): Workbook = {
+    import java.io.FileInputStream
+    import com.monitorjbl.xlsx.StreamingReader
+    StreamingReader.builder()
+      .rowCacheSize(100)
+      .bufferSize(4096)
+      .open(new FileInputStream(file))
+  }
+
+  private def getIteratorStream(file: String, sheet: Int): Iterator[Row] = {
+    import collection.JavaConverters._
+    getWorkbookStream(file).getSheetAt(sheet).iterator.asScala
+  }
+
   private def getHeaders(file: String, sheet: Int, iterator: Iterator[Row]): ExcelHeader = {
     import collection.JavaConverters._
     val headRow = {
       if (iterator.hasNext) iterator.next.asScala
       else throw new Error("Empty "+sheet+" sheet: "+file)
     }
-    (for (cell<-headRow) yield (cell.getColumnIndex,prepareColumn(cell.getStringCellValue))).toSeq
+    (for (cell<-headRow) yield (cell.getColumnIndex,prepareColumn(extractString(cell)))).toSeq
   }
+
+
 
 
 
@@ -54,7 +74,19 @@ object excel {
     * @param condition Anonymous function, rows for which this function returns false are exluded from result.
     * @return (Headers, Data) pair.
     */
-  def readExcel(file: String, sheet: Int, condition: ExcelRow => Boolean = x => true): (ExcelHeader,ExcelData) = {
+  def readExcel(
+    file: String, 
+    sheet: Int, 
+    condition: ExcelRow => Boolean = x => true, 
+    method: String = "default"
+  ): (ExcelHeader,ExcelData) = {
+    if (method=="default") readExcelDefault(file, sheet, condition)
+    else if (method=="stream") readExcelStream(file, sheet, condition)
+    else throw new Error("Unsupported method for readExcel")
+  }
+
+  /** Default Excel reader using Apache POI. */
+  private def readExcelDefault(file: String, sheet: Int, condition: ExcelRow => Boolean): (ExcelHeader, ExcelData) = {
     import org.apache.poi.ss.usermodel.DataFormatter
     import collection.JavaConverters._
     // Formats
@@ -65,7 +97,7 @@ object excel {
     val headers  = getHeaders(file, sheet, iterator)
     // Let's extract the data now
     val indices = headers.map(_._1)
-    val buffer  = scala.collection.mutable.ArrayBuffer[Seq[String]]()
+    val buffer  = scala.collection.mutable.ArrayBuffer[ExcelRow]()
     while (iterator.hasNext) {
       val row = {
         val rowObj  = iterator.next
@@ -75,6 +107,30 @@ object excel {
       if (condition(row)) buffer += row
     }
     (headers.toSeq,buffer.toArray.toSeq)
+  }
+
+  /** Low memory footprint Excel reader. */
+  private def readExcelStream(file: String, sheet: Int, condition: ExcelRow => Boolean): (ExcelHeader,ExcelData) = {
+    import org.apache.poi.ss.usermodel.DataFormatter
+    import collection.JavaConverters._
+    // Formats
+    val blankPolicy = Row.MissingCellPolicy.RETURN_BLANK_AS_NULL
+    val formatter   = new DataFormatter()
+    // Extract the iterator for this Excel sheet, then the headers
+    val iterator = getIteratorStream(file, sheet)
+    val headers  = getHeaders(file, sheet, iterator)
+    // Extracting data
+    val indices = headers.map(_._1)
+    val buffer  = scala.collection.mutable.ArrayBuffer[ExcelRow]()
+    while (iterator.hasNext) {
+      val row = {
+        val rowObj: Seq[Option[String]] = iterator.next.asScala.map(cell => Some(extractString(cell))).toSeq
+        val values  = for {index <- indices} yield rowObj(index)
+        values.map(e => e match {case Some(x) => x.trim; case None => throw new Error("NULL")}).toSeq
+      }
+      if (condition(row)) buffer += row
+    }
+    (headers,buffer.toArray.toSeq)
   }
 
 
@@ -87,7 +143,18 @@ object excel {
     * @param condition Anonymous function, rows for which this function returns false are exluded from result.
     * @return Excel rows as Seq[T].
     */
-  def readExcelintoClass[T: ClassTag](file: String, sheet: Int, condition: T => Boolean = (x:T) => true): Seq[T] = {
+  def readExcelintoClass[T: ClassTag](
+    file: String, 
+    sheet: Int, 
+    condition: T => Boolean = (x:T) => true, 
+    method: String = "default"
+  ): Seq[T] = {
+    if (method=="default") readExcelClassDefault(file, sheet, condition)
+    else if (method=="stream") readExcelClassStream(file, sheet, condition)
+    else throw new Error("Unsupported method for readExcelintoClass")
+  }
+
+  private def readExcelClassDefault[T: ClassTag](file: String, sheet: Int, condition: T => Boolean) = {
     import org.apache.poi.ss.usermodel.DataFormatter
     import collection.JavaConverters._
     // Formats
@@ -117,6 +184,39 @@ object excel {
     }
     buffer.toArray.toSeq
   }
+
+  private def readExcelClassStream[T: ClassTag](file: String, sheet: Int, condition: T => Boolean) = {
+    import org.apache.poi.ss.usermodel.DataFormatter
+    import collection.JavaConverters._
+    // Formats
+    val blankPolicy = Row.MissingCellPolicy.RETURN_BLANK_AS_NULL
+    val formatter   = new DataFormatter()
+    // Extract the iterator for this Excel sheet, then the headers
+    val iterator = getIterator(file, sheet)
+    val headers  = getHeaders(file, sheet, iterator)
+    // Checking headers with the class
+    val excelVars = headers.map(_._2)
+    val classVars = applyOf[T](headers).getParameters.map(_.getName)
+    val missingFields = classVars.filterNot(x => excelVars contains x)
+    val missingThrown = missingFields.foldLeft("")((a,b) => if (a.isEmpty) b else a+","+b)
+    if (!missingFields.isEmpty) throw new Error("Missing fields: "+missingThrown)
+    // Extracting data
+    val indices = headers.map(_._1)
+    val buffer  = scala.collection.mutable.ArrayBuffer[T]()
+    while (iterator.hasNext) {
+      val row = {
+        val rowObj: Seq[Option[String]] = iterator.next.asScala.map(x => Some(extractString(x))).toSeq
+        val values  = for {index <- indices} yield rowObj(index)
+        values.map(e => e match {case Some(x) => x.trim; case None => throw new Error("NULL")}).toSeq
+      }
+      mapRowToClass[T](headers, row) match {
+        case (seq:T) => if (condition(seq)) buffer += seq
+      }
+    }
+    buffer.toArray.toSeq
+  }
+
+
 
 
 
