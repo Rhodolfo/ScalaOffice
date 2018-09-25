@@ -5,7 +5,10 @@ class ReadCSVClassMix extends FunSuite {
   import com.arena.office.csv.readCSVintoClass
   import com.arena.testing.auxRead.{ReadMix,dataMix}
 
+  def roundIt(d: Double) = BigDecimal(d).setScale(2, BigDecimal.RoundingMode.HALF_UP).toDouble
+
   val rawMix = readCSVintoClass[ReadMix]("src/test/resources/tipos.csv")
+    .map(_ match {case ReadMix(a,b,c) => ReadMix(a,b,roundIt(c))})
 
   test("Rows must equal preset values, detecting types") {
     assert(rawMix.size === 5)

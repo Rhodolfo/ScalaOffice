@@ -5,9 +5,17 @@ class ReadExcelClassStr extends FunSuite {
   import com.arena.office.excel.readExcelintoClass
   import com.arena.testing.auxRead.{ReadStr,dataStr,ReadTrs,dataTrs,ReadRst,dataRst}
 
+  def roundIt(s: String) = {
+    val t = BigDecimal(s.trim.toDouble).setScale(2, BigDecimal.RoundingMode.HALF_UP).toDouble.toString
+    "\\.0".r.replaceAllIn(t,"")
+  }
+
   val rawStr = readExcelintoClass[ReadStr]("src/test/resources/tipos.xlsx", 0)
+    .map(_ match {case ReadStr(a,b,c) => ReadStr(a,b,roundIt(c))})
   val rawTrs = readExcelintoClass[ReadTrs]("src/test/resources/tipos.xlsx", 0)
+    .map(_ match {case ReadTrs(a,b,c) => ReadTrs(a,roundIt(b),c)})
   val rawRst = readExcelintoClass[ReadRst]("src/test/resources/tipos.xlsx", 0)
+    .map(_ match {case ReadRst(a,b,c) => ReadRst(roundIt(a),b,c)})
 
   test("Rows must equal preset values, ABC permutation") {
     assert(rawStr.size === 5)

@@ -21,9 +21,26 @@ object excel {
   type ExcelData = Seq[ExcelRow]
 
   private def extractString(cell: Cell): String = {
-    import org.apache.poi.ss.usermodel.CellType
-    val t = cell.setCellType(CellType.STRING)
-    cell.getStringCellValue
+    def sqlDate(date: java.util.Date): Int = {
+      import java.util.Calendar
+      val calendar = Calendar.getInstance
+      calendar.setTime(date)
+      val year  = calendar.get(Calendar.YEAR)
+      val month = calendar.get(Calendar.MONTH)+1
+      val day   = calendar.get(Calendar.DAY_OF_MONTH)
+      //if (year < 100) (2000+year)*10000+month*100+day
+      //else 
+      year*10000+month*100+day
+    }
+    import org.apache.poi.ss.usermodel.{CellType, DateUtil}
+    val t = cell.getCellTypeEnum()
+    def intIt(s: String): String = "\\.0+?$".r.replaceAllIn(s,"")
+    if (t == CellType.STRING) cell.getStringCellValue()
+    else if (t == CellType.NUMERIC) {
+      if (DateUtil.isCellDateFormatted(cell)) sqlDate(cell.getDateCellValue()).toString
+      else intIt(cell.getNumericCellValue().toString)
+    }
+    else cell.getStringCellValue()
   }
 
   private def getWorkbook(file: String): Workbook = {
@@ -149,8 +166,8 @@ object excel {
     condition: T => Boolean = (x:T) => true, 
     method: String = "default"
   ): Seq[T] = {
-    if (method=="default") readExcelClassDefault(file, sheet, condition)
-    else if (method=="stream") readExcelClassStream(file, sheet, condition)
+    if (method=="default") readExcelClassDefault[T](file, sheet, condition)
+    else if (method=="stream") readExcelClassStream[T](file, sheet, condition)
     else throw new Error("Unsupported method for readExcelintoClass")
   }
 
@@ -192,7 +209,7 @@ object excel {
     val blankPolicy = Row.MissingCellPolicy.RETURN_BLANK_AS_NULL
     val formatter   = new DataFormatter()
     // Extract the iterator for this Excel sheet, then the headers
-    val iterator = getIterator(file, sheet)
+    val iterator = getIteratorStream(file, sheet)
     val headers  = getHeaders(file, sheet, iterator)
     // Checking headers with the class
     val excelVars = headers.map(_._2)
