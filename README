@@ -1,6 +1,9 @@
 Repo made for tools that deal with reading from/writing to MS Office files.
 
-v2.0: 
+v2.0:
+- Added option for streaming Excel files instead of loading into memory (experimental).
+- Refactored Excel reading code for ease of reading method switching.
+v1.5: 
 - Reads UTF-8 CSV files through readCSV and readCSVintoClass.
 - Added optional conditions to include data into result for parsing large files.
 v1.0: 
