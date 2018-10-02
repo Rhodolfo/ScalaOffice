@@ -28,8 +28,6 @@ object excel {
       val year  = calendar.get(Calendar.YEAR)
       val month = calendar.get(Calendar.MONTH)+1
       val day   = calendar.get(Calendar.DAY_OF_MONTH)
-      //if (year < 100) (2000+year)*10000+month*100+day
-      //else 
       year*10000+month*100+day
     }
     import org.apache.poi.ss.usermodel.{CellType, DateUtil}
@@ -43,29 +41,36 @@ object excel {
     else cell.getStringCellValue()
   }
 
-  private def getWorkbook(file: String): Workbook = {
+  private def getWorkbook(file: String, method: String, fromResource: Boolean): Workbook = {
     import java.io.File
     import org.apache.poi.ss.usermodel.WorkbookFactory
-    WorkbookFactory.create(new File(file))
-  }
-
-  private def getIterator(file: String, sheet: Int): Iterator[Row] = {
-    import collection.JavaConverters._
-    getWorkbook(file).getSheetAt(sheet).iterator.asScala
-  }
-
-  private def getWorkbookStream(file: String): Workbook = {
     import java.io.FileInputStream
     import com.monitorjbl.xlsx.StreamingReader
-    StreamingReader.builder()
-      .rowCacheSize(100)
-      .bufferSize(4096)
-      .open(new FileInputStream(file))
+    method match {
+      case "default" => {
+        val fileObj = {
+          if (fromResource) new File(getClass.getResource(file).getFile())
+          else new File(file)
+        }
+        WorkbookFactory.create(fileObj)
+      }
+      case "stream" => {
+        val streamObj = {
+          if (fromResource) throw new Error("Excel streaming from resources is unsupported")
+          else new FileInputStream(file)
+        }
+        StreamingReader.builder()
+          .rowCacheSize(100)
+          .bufferSize(4096)
+          .open(streamObj)
+      }
+      case _ => throw new Error("Unsupported method for getWorkbook")
+    }
   }
 
-  private def getIteratorStream(file: String, sheet: Int): Iterator[Row] = {
+  private def getIterator(file: String, sheet: Int, method: String, fromResource: Boolean): Iterator[Row] = {
     import collection.JavaConverters._
-    getWorkbookStream(file).getSheetAt(sheet).iterator.asScala
+    getWorkbook(file, method, fromResource).getSheetAt(sheet).iterator.asScala
   }
 
   private def getHeaders(file: String, sheet: Int, iterator: Iterator[Row]): ExcelHeader = {
@@ -89,28 +94,36 @@ object excel {
     * @param file Path to workbook.
     * @param sheet Index of sheet to read in workbook.
     * @param condition Anonymous function, rows for which this function returns false are exluded from result.
+    * @param method "default" loads file into memory, "stream" to process large files as a stream
+    * @param fromResource If true, pulls the file from resources instead of the regular host filesystem.
     * @return (Headers, Data) pair.
     */
   def readExcel(
     file: String, 
     sheet: Int, 
     condition: ExcelRow => Boolean = x => true, 
-    method: String = "default"
+    method: String = "default",
+    fromResource: Boolean = false
   ): (ExcelHeader,ExcelData) = {
-    if (method=="default") readExcelDefault(file, sheet, condition)
-    else if (method=="stream") readExcelStream(file, sheet, condition)
+    if (method=="default") readExcelDefault(file, sheet, condition, fromResource)
+    else if (method=="stream") readExcelStream(file, sheet, condition, fromResource)
     else throw new Error("Unsupported method for readExcel")
   }
 
   /** Default Excel reader using Apache POI. */
-  private def readExcelDefault(file: String, sheet: Int, condition: ExcelRow => Boolean): (ExcelHeader, ExcelData) = {
+  private def readExcelDefault(
+    file: String, 
+    sheet: Int, 
+    condition: ExcelRow => Boolean, 
+    fromResource: Boolean
+  ): (ExcelHeader, ExcelData) = {
     import org.apache.poi.ss.usermodel.DataFormatter
     import collection.JavaConverters._
     // Formats
     val blankPolicy = Row.MissingCellPolicy.RETURN_BLANK_AS_NULL
     val formatter   = new DataFormatter()
     // Extract the iterator for this Excel sheet, then the headers
-    val iterator = getIterator(file, sheet)
+    val iterator = getIterator(file, sheet, "default", fromResource)
     val headers  = getHeaders(file, sheet, iterator)
     // Let's extract the data now
     val indices = headers.map(_._1)
@@ -127,14 +140,19 @@ object excel {
   }
 
   /** Low memory footprint Excel reader. */
-  private def readExcelStream(file: String, sheet: Int, condition: ExcelRow => Boolean): (ExcelHeader,ExcelData) = {
+  private def readExcelStream(
+    file: String, 
+    sheet: Int, 
+    condition: ExcelRow => Boolean, 
+    fromResource: Boolean
+  ): (ExcelHeader,ExcelData) = {
     import org.apache.poi.ss.usermodel.DataFormatter
     import collection.JavaConverters._
     // Formats
     val blankPolicy = Row.MissingCellPolicy.RETURN_BLANK_AS_NULL
     val formatter   = new DataFormatter()
     // Extract the iterator for this Excel sheet, then the headers
-    val iterator = getIteratorStream(file, sheet)
+    val iterator = getIterator(file, sheet, "stream", fromResource)
     val headers  = getHeaders(file, sheet, iterator)
     // Extracting data
     val indices = headers.map(_._1)
@@ -158,27 +176,35 @@ object excel {
     * @param file Path to workbook.
     * @param sheet Sheet index in workbook.
     * @param condition Anonymous function, rows for which this function returns false are exluded from result.
+    * @param method "default" loads file into memory, "stream" to process large files as a stream
+    * @param fromResource If true, pulls the file from resources instead of the regular host filesystem.
     * @return Excel rows as Seq[T].
     */
   def readExcelintoClass[T: ClassTag](
     file: String, 
     sheet: Int, 
     condition: T => Boolean = (x:T) => true, 
-    method: String = "default"
+    method: String = "default",
+    fromResource: Boolean = false
   ): Seq[T] = {
-    if (method=="default") readExcelClassDefault[T](file, sheet, condition)
-    else if (method=="stream") readExcelClassStream[T](file, sheet, condition)
+    if (method=="default") readExcelClassDefault[T](file, sheet, condition, fromResource)
+    else if (method=="stream") readExcelClassStream[T](file, sheet, condition, fromResource)
     else throw new Error("Unsupported method for readExcelintoClass")
   }
 
-  private def readExcelClassDefault[T: ClassTag](file: String, sheet: Int, condition: T => Boolean) = {
+  private def readExcelClassDefault[T: ClassTag](
+    file: String, 
+    sheet: Int, 
+    condition: T => Boolean, 
+    fromResource: Boolean
+  ): Seq[T] = {
     import org.apache.poi.ss.usermodel.DataFormatter
     import collection.JavaConverters._
     // Formats
     val blankPolicy = Row.MissingCellPolicy.RETURN_BLANK_AS_NULL
     val formatter   = new DataFormatter()
     // Extract the iterator for this Excel sheet, then the headers
-    val iterator = getIterator(file, sheet)
+    val iterator = getIterator(file, sheet, "default", fromResource)
     val headers  = getHeaders(file, sheet, iterator)
     // Checking headers with the class
     val excelVars = headers.map(_._2)
@@ -202,14 +228,19 @@ object excel {
     buffer.toArray.toSeq
   }
 
-  private def readExcelClassStream[T: ClassTag](file: String, sheet: Int, condition: T => Boolean) = {
+  private def readExcelClassStream[T: ClassTag](
+    file: String, 
+    sheet: Int, 
+    condition: T => Boolean, 
+    fromResource: Boolean
+  ): Seq[T] = {
     import org.apache.poi.ss.usermodel.DataFormatter
     import collection.JavaConverters._
     // Formats
     val blankPolicy = Row.MissingCellPolicy.RETURN_BLANK_AS_NULL
     val formatter   = new DataFormatter()
     // Extract the iterator for this Excel sheet, then the headers
-    val iterator = getIteratorStream(file, sheet)
+    val iterator = getIterator(file, sheet, "stream", fromResource)
     val headers  = getHeaders(file, sheet, iterator)
     // Checking headers with the class
     val excelVars = headers.map(_._2)

@@ -1,5 +1,7 @@
 Repo made for tools that deal with reading from/writing to MS Office files.
 
+v2.1: 
+- Allows Excel file to be read from resources if using the "default" method.
 v2.0:
 - Added option for streaming Excel files instead of loading into memory (experimental).
 - Refactored Excel reading code for ease of reading method switching.

@@ -1,6 +1,6 @@
 lazy val settings = Seq(
   organization := "com.arena",
-  version := "2.0",
+  version := "2.1",
   scalaVersion := "2.12.6",
   scalacOptions += "-deprecation",
   scalacOptions += "-unchecked",
