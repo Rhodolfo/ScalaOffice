@@ -221,8 +221,10 @@ object excel {
         val values  = for {index <- indices} yield Option(formatter.formatCellValue(rowObj.getCell(index, blankPolicy)))
         values.map(e => e match {case Some(x) => x.trim; case None => throw new Error("NULL")}).toSeq
       }
-      mapRowToClass[T](headers, row) match {
-        case (seq:T) => if (condition(seq)) buffer += seq
+      if (row.foldLeft[Boolean](true)((a,b) => a && !b.trim.isEmpty)) {
+        mapRowToClass[T](headers, row) match {
+          case (seq:T) => if (condition(seq)) buffer += seq
+        }
       }
     }
     buffer.toArray.toSeq
@@ -257,8 +259,10 @@ object excel {
         val values  = for {index <- indices} yield rowObj(index)
         values.map(e => e match {case Some(x) => x.trim; case None => throw new Error("NULL")}).toSeq
       }
-      mapRowToClass[T](headers, row) match {
-        case (seq:T) => if (condition(seq)) buffer += seq
+      if (row.foldLeft[Boolean](true)((a,b) => a && !b.trim.isEmpty)) {
+        mapRowToClass[T](headers, row) match {
+          case (seq:T) => if (condition(seq)) buffer += seq
+        }
       }
     }
     buffer.toArray.toSeq

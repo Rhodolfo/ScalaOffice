@@ -1,5 +1,7 @@
 Repo made for tools that deal with reading from/writing to MS Office files.
 
+v2.2: 
+- filters out fully empty rows when reading classes from Excel.
 v2.1: 
 - Allows Excel file to be read from resources if using the "default" method.
 v2.0:
