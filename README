@@ -1,7 +1,9 @@
 Repo made for tools that deal with reading from/writing to MS Office files.
 
+Currently, formula cells are read as-is, so cells with a formula will be read as strings containing the formula.
+
 v2.2: 
-- filters out fully empty rows when reading classes from Excel.
+- Filters out fully empty rows when reading classes from Excel.
 v2.1: 
 - Allows Excel file to be read from resources if using the "default" method.
 v2.0:
