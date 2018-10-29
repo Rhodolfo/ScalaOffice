@@ -192,6 +192,8 @@ object excel {
     else throw new Error("Unsupported method for readExcelintoClass")
   }
 
+  private def isRowNonEmpty(s: Seq[String]): Boolean = s.foldLeft[Boolean](false)((a,b) => a || !b.trim.isEmpty)
+
   private def readExcelClassDefault[T: ClassTag](
     file: String, 
     sheet: Int, 
@@ -221,7 +223,7 @@ object excel {
         val values  = for {index <- indices} yield Option(formatter.formatCellValue(rowObj.getCell(index, blankPolicy)))
         values.map(e => e match {case Some(x) => x.trim; case None => throw new Error("NULL")}).toSeq
       }
-      if (row.foldLeft[Boolean](true)((a,b) => a && !b.trim.isEmpty)) {
+      if (isRowNonEmpty(row)) {
         mapRowToClass[T](headers, row) match {
           case (seq:T) => if (condition(seq)) buffer += seq
         }
@@ -259,7 +261,7 @@ object excel {
         val values  = for {index <- indices} yield rowObj(index)
         values.map(e => e match {case Some(x) => x.trim; case None => throw new Error("NULL")}).toSeq
       }
-      if (row.foldLeft[Boolean](true)((a,b) => a && !b.trim.isEmpty)) {
+      if (isRowNonEmpty(row)) {
         mapRowToClass[T](headers, row) match {
           case (seq:T) => if (condition(seq)) buffer += seq
         }
