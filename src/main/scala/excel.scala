@@ -82,7 +82,56 @@ object excel {
     (for (cell<-headRow) yield (cell.getColumnIndex,prepareColumn(extractString(cell)))).toSeq
   }
 
+  
 
+  /** Sometimes the max index for the colection of Excel sheets in a workbook is needed.
+    *
+    * @param file Path to workbook.
+    * @param method "default" loads file into memory, "stream" to process large files as a stream
+    * @return Max sheet index.
+    */
+  def readExcelSheetMaxIndex(file: String, method: String): Int = {
+    import collection.JavaConverters._
+    import org.apache.poi.ss.usermodel.Sheet
+    val workbook = getWorkbook(file, method, false)
+    def aux(iterator: Iterator[Sheet], index: Int): Int = {
+      if (iterator.hasNext) {
+        iterator.next 
+        aux(iterator, index+1)
+      } else index-1
+    }
+    aux(workbook.iterator.asScala, 0)
+  }
+
+
+
+  /** Reads Excel to a Seq[String].
+    *
+    * @param file Path to workbook.
+    * @param sheet Index of sheet to read in workbook.
+    * @return Data from Excel file.
+    */
+  def readExcelRaw(file: String, sheet: Int): Seq[Seq[String]] = {
+    import org.apache.poi.ss.usermodel.DataFormatter
+    import collection.JavaConverters._
+    // Formats
+    val blankPolicy = Row.MissingCellPolicy.RETURN_BLANK_AS_NULL
+    val formatter   = new DataFormatter()
+    // Extract the iterator for this Excel sheet, then the headers
+    val iterator = getIterator(file, sheet, "default", false)
+    // Iterate over and read everything
+    val buffer  = scala.collection.mutable.ArrayBuffer[ExcelRow]()
+    while (iterator.hasNext) {
+      val row = {
+        val rowObj  = iterator.next
+        val indices = 0 until rowObj.getLastCellNum
+        val values  = for {index <- indices} yield Option(formatter.formatCellValue(rowObj.getCell(index, blankPolicy)))
+        values.map(e => e match {case Some(x) => x.trim; case None => throw new Error("NULL")}).toSeq
+      }
+      buffer += row
+    }
+    buffer.toArray.toSeq
+  }
 
 
 
@@ -372,5 +421,83 @@ object excel {
     headWrite()
     dataWrite()
   }
+
+
+
+
+
+  /** Writes data to a new XLSX or XLS workbook, no headers.
+    *
+    * @param file Path to workbook, must have an .xlsx or .xls extension.
+    * @param sheet Name of worksheet to save data in.
+    * @param data Data.
+    * @param filetype Type of Excel workbook, XLSX by default. Must be XLSX or XLS (ignores case).
+    * @return Writes to file.
+    */
+  def writeExcelRaw(file: String, sheet: String, data: Seq[Seq[Any]], filetype: String = "XLSX"): Unit = {
+    import org.apache.poi.ss.usermodel.{DataFormatter, WorkbookFactory, Row}
+    import java.io.{File,FileOutputStream}
+    import collection.JavaConverters._
+    import org.apache.poi.xssf.usermodel.{XSSFWorkbook,XSSFSheet,XSSFRow,XSSFCell}
+    import org.apache.poi.hssf.usermodel.{HSSFWorkbook,HSSFSheet,HSSFRow,HSSFCell}
+    // Checks file type
+    val etype = Map("XLSX"->".xlsx","XLS"->".xls")
+    val ftype = filetype.toUpperCase.trim
+    val types = etype.keys.toSeq
+    if (!types.contains(ftype)) throw new Error("File type must be one of the following: "+types.reduceLeft(_+", "+_))
+    // Check extension
+    val extension = etype(ftype)
+    if (!file.endsWith(extension)) throw new Error ("File type "+ftype+" must have "+extension+" extension")
+    // Start writting to Excel
+    val workbook  = {
+      if (filetype=="XLSX") new XSSFWorkbook() 
+      else if (filetype=="XLS") new HSSFWorkbook()
+      else throw new Error("Invalid file type "+ftype)
+    }
+    writeToWorkbookRaw(workbook, sheet, data)
+    // Save to file
+    val fileOut = new FileOutputStream(file)
+    try {workbook.write(fileOut)} finally {fileOut.close()}
+  }
+
+  /** Writes data to existing Excel workbook. Autodetects workbook type. No headers.
+    *
+    * @param file Path to workbook.
+    * @param sheet Name of new worksheet.
+    * @param headers Headers.
+    * @param data Data.
+    * @return Writes to existing file.
+    */
+  def writeExcelNewSheetRaw(file: String, sheet: String, data: Seq[Seq[Any]]): Unit = {
+    import org.apache.poi.ss.usermodel.{DataFormatter, WorkbookFactory, Row}
+    import java.io.{File,FileInputStream,FileOutputStream}
+    // Start writting to Excel
+    val fileIn    = new FileInputStream(file)
+    val workbook  = try {WorkbookFactory.create(fileIn)} finally {fileIn.close()}
+    writeToWorkbookRaw(workbook, sheet, data)
+    // Save to file
+    val fileOut   = new FileOutputStream(file)
+    try {workbook.write(fileOut)} finally {fileOut.close()}
+  }
+
+  /** Writes to Excel workbook, allows abstraction of XLSX and XLS workbook types. */
+  private def writeToWorkbookRaw(workbook: Workbook, sheet: String, data: Seq[Seq[Any]]): Unit = {
+    import org.apache.poi.ss.usermodel.{Sheet,Row,Cell}
+    val worksheet = workbook.createSheet(sheet)
+    // Write data
+    def dataWrite() = {
+      for (r <- data.indices) {
+        val row = worksheet.createRow(r)
+        for (c <- data(r).indices) {
+          val cell = row.createCell(c)
+          cell.setCellValue(data(r)(c).toString)
+        }
+      }
+    }
+    // Perform the writing
+    dataWrite()
+  }
+
+
 
 }
