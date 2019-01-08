@@ -209,7 +209,7 @@ object excel {
     while (iterator.hasNext) {
       val row = {
         val rowObj: Seq[Option[String]] = iterator.next.asScala.map(cell => Some(extractString(cell))).toSeq
-        val values  = for {index <- indices} yield rowObj(index)
+        val values  = for {index <- indices} yield rowObj.applyOrElse(index, (x:Int)=>Some(""))
         values.map(e => e match {case Some(x) => x.trim; case None => throw new Error("NULL")}).toSeq
       }
       if (condition(row)) buffer += row
