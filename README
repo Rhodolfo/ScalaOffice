@@ -2,6 +2,8 @@ Repo made for tools that deal with reading from/writing to MS Office files.
 
 Currently, formula cells are read as-is, so cells with a formula will be read as strings containing the formula.
 
+v2.6:
+- Added getSheets function for Excel files.
 v2.5:
 - Empty values are read as empty strings in readExcelintoClass/readExcel with Stream method.
 v2.4: 

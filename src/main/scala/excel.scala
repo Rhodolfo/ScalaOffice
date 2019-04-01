@@ -41,7 +41,8 @@ object excel {
     else cell.getStringCellValue()
   }
 
-  private def getWorkbook(file: String, method: String, fromResource: Boolean): Workbook = {
+  /** Creates a Worknook instance, must specify method and fromResource flag. */
+  def getWorkbook(file: String, method: String, fromResource: Boolean): Workbook = {
     import java.io.File
     import org.apache.poi.ss.usermodel.WorkbookFactory
     import java.io.FileInputStream
@@ -82,7 +83,21 @@ object excel {
     (for (cell<-headRow) yield (cell.getColumnIndex,prepareColumn(extractString(cell)))).toSeq
   }
 
+
+
+  /** Obtains list of sheets with indices and names.
+    *  
+    * @param file Path to workbook.
+    * @param method "default" loads file into memory, "stream" to process large files as a stream
+    * @param fromResource If true, pulls the file from resources instead of the regular host filesystem.
+    * @return Seq of (Index, Name) pairs.
+    */
+  def getSheets(file: String, method: String = "default", fromResource: Boolean = false): Seq[(Int,String)] = {
+    val wb = getWorkbook(file, method, fromResource)
+    (0 until wb.getNumberOfSheets).toSeq.map(ii => (ii, wb.getSheetName(ii)))
+  }
   
+
 
   /** Sometimes the max index for the colection of Excel sheets in a workbook is needed.
     *
