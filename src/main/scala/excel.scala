@@ -10,7 +10,7 @@ object excel {
   import scala.util.matching.Regex
   import scala.reflect.{ClassTag,classTag}
   import org.apache.poi.ss.usermodel.{Workbook,Row, Cell}
-  import com.arena.office.process.prepareColumn
+  import com.arena.office.process.{prepareColumn,parseDouble}
   import com.arena.office.reflect.{applyOf,mapRowToClass}
 
   /** Type alias for an Excel row, rows are stored as Seq[String]. */
@@ -428,7 +428,11 @@ object excel {
         val row = worksheet.createRow(r+1)
         for (c <- headers.indices) {
           val cell = row.createCell(c)
-          cell.setCellValue(data(r)(c).toString)
+          val parsed: Option[Double] = parseDouble(data(r)(c))
+          parsed match {
+            case Some(d) => cell.setCellValue(d)
+            case None => cell.setCellValue(data(r)(c).toString)
+          }
         }
       }
     }
@@ -505,7 +509,11 @@ object excel {
         val row = worksheet.createRow(r)
         for (c <- data(r).indices) {
           val cell = row.createCell(c)
-          cell.setCellValue(data(r)(c).toString)
+          val parsed: Option[Double] = parseDouble(data(r)(c))
+          parsed match {
+            case Some(d) => cell.setCellValue(d)
+            case None => cell.setCellValue(data(r)(c).toString)
+          }
         }
       }
     }
